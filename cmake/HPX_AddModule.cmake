@@ -4,13 +4,14 @@
 # Distributed under the Boost Software License, Version 1.0. (See accompanying
 # file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
 
+include(HPX_CollectStdHeaders)
 include(HPX_ExportTargets)
 include(HPX_PrintSummary)
 
 function(add_hpx_module libname modulename)
   # Retrieve arguments
   set(options CUDA CONFIG_FILES NO_CONFIG_IN_GENERATED_HEADERS)
-  set(one_value_args GLOBAL_HEADER_GEN)
+  set(one_value_args GLOBAL_HEADER_GEN GLOBAL_HEADER_MODULE_GEN)
   set(multi_value_args
       SOURCES
       HEADERS
@@ -66,6 +67,33 @@ function(add_hpx_module libname modulename)
       CACHE INTERNAL "List of enabled HPX modules in the ${libname} library"
             FORCE
   )
+
+  if(${modulename}_GLOBAL_HEADER_MODULE_GEN)
+    # Mark the module as exposing C++ modules
+    set(cxx_modules ${HPX_ENABLED_CXX_MODULES})
+    list(APPEND cxx_modules ${modulename})
+    list(SORT cxx_modules)
+    list(REMOVE_DUPLICATES cxx_modules)
+
+    set(HPX_ENABLED_CXX_MODULES
+        ${cxx_modules}
+        CACHE INTERNAL "List of HPX modules that are exposed as a C++ module"
+              FORCE
+    )
+
+    set(cxx_modules ${HPX_${libname_upper}_ENABLED_CXX_MODULES})
+    list(APPEND cxx_modules ${modulename})
+    list(SORT cxx_modules)
+    list(REMOVE_DUPLICATES cxx_modules)
+
+    set(HPX_${libname_upper}_ENABLED_CXX_MODULES
+        ${cxx_modules}
+        CACHE
+          INTERNAL
+          "List of HPX modules that are exposed as a C++ module in the ${libname} library"
+          FORCE
+    )
+  endif()
 
   # Main directories of the module
   set(SOURCE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/src")
@@ -154,11 +182,46 @@ function(add_hpx_module libname modulename)
     if(NOT ${modulename}_NO_CONFIG_IN_GENERATED_HEADERS)
       set(module_headers "${module_headers}#endif\n")
     endif()
-    configure_file(
-      "${PROJECT_SOURCE_DIR}/cmake/templates/global_module_header.hpp.in"
-      "${global_header}"
+
+    # Decide output path and template file
+    set(global_header
+        "${CMAKE_CURRENT_BINARY_DIR}/include/hpx/modules/${modulename}.hpp"
     )
+    if(${modulename}_GLOBAL_HEADER_MODULE_GEN)
+      set(template_file
+          "${HPX_SOURCE_DIR}/cmake/templates/global_module_header_modules.hpp.in"
+      )
+    else()
+      set(template_file
+          "${HPX_SOURCE_DIR}/cmake/templates/global_module_header.hpp.in"
+      )
+    endif()
+
+    configure_file(${template_file} ${global_header} @ONLY)
     set(generated_headers ${global_header})
+
+    if(${modulename}_GLOBAL_HEADER_MODULE_GEN)
+      # collect all standard header files used by this module
+      set(found_includes)
+      hpx_collect_std_headers(
+        ${modulename}
+        SOURCES ${${modulename}_HEADERS}
+        SOURCE_ROOT ${HPX_SOURCE_DIR}/libs/${libname}
+        GENERATED_ROOT ${CMAKE_BINARY_DIR}/libs/${libname}
+        FOUND_HEADERS found_includes
+      )
+
+      set(standard_headers ${HPX_STANDARD_HEADERS})
+      list(APPEND standard_headers ${found_includes})
+      list(SORT standard_headers)
+      list(REMOVE_DUPLICATES standard_headers)
+
+      set(HPX_STANDARD_HEADERS
+          ${standard_headers}
+          CACHE STRING "List of standard headers #included by HPX modules"
+                FORCE
+      )
+    endif()
   endif()
 
   # some headers files have to be generated, remove the `.in` file extension
@@ -502,9 +565,17 @@ function(add_hpx_module libname modulename)
     target_link_libraries(hpx_${libname} PRIVATE ${${modulename}_OBJECTS})
   endif()
 
+  set(_hpx_prev_scan "${CMAKE_CXX_SCAN_FOR_MODULES}")
+  if(HPX_WITH_CXX_MODULES AND ${modulename}_GLOBAL_HEADER_MODULE_GEN)
+    set(CMAKE_CXX_SCAN_FOR_MODULES ON)
+  endif()
+
   foreach(dir ${${modulename}_CMAKE_SUBDIRS})
     add_subdirectory(${dir})
   endforeach(dir)
+
+  # Restore previous default so sibling modules are unaffected.
+  set(CMAKE_CXX_SCAN_FOR_MODULES "${_hpx_prev_scan}")
 
   create_configuration_summary(
     "    Module configuration (${modulename}):" "${modulename}"

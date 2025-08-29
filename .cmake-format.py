@@ -357,6 +357,7 @@ with section("parse"):
                                     'EXCLUDE_FROM_GLOBAL_HEADER': '+',
                                     'ADD_TO_GLOBAL_HEADER': '+',
                                     'GLOBAL_HEADER_GEN': 1,
+                                    'GLOBAL_HEADER_MODULE_GEN': 1,
                                     'HEADERS': '+',
                                     'OBJECTS': '+',
                                     'MODULE_DEPENDENCIES': '+',
@@ -567,7 +568,16 @@ with section("parse"):
     'write_config_defines_file': { 'kwargs': { 'FILENAME': 1,
                                                'NAMESPACE': 1,
                                                'TEMPLATE': 1},
-                                   'pargs': {'flags': [], 'nargs': '*'}}
+                                   'pargs': {'flags': [], 'nargs': '*'}},
+    'hpx_collect_std_headers': { 'kwargs': { 'SOURCES': '+',
+                                             'SOURCE_ROOT': 1,
+                                             'GENERATED_ROOT': 1,
+                                             'FOUND_HEADERS': 1},
+                          'pargs': { 'flags': [], 'nargs': '1+'}},
+    'hpx_extract_includes_from_file': { 'kwargs': { 'SOURCE': 1,
+                                                    'INCLUDE_DIRS': '+',
+                                                    'FOUND_HEADERS': 1},
+                          'pargs': { 'flags': [], 'nargs': '1+'}}
   }
 
   # Specify property tags.
