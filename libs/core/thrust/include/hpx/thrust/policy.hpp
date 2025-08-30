@@ -39,44 +39,25 @@ namespace hpx::thrust {
     struct thrust_device_policy;
 
     struct thrust_task_policy
+      : hpx::execution::detail::parallel_task_policy_shim<
+            hpx::execution::parallel_executor,
+            hpx::traits::executor_parameters_type_t<
+                hpx::execution::parallel_executor>>
     {
-        using executor_type = hpx::execution::parallel_executor;
-        using executor_parameters_type =
-            hpx::execution::experimental::extract_executor_parameters<
-                executor_type>::type;
-        using execution_category = hpx::execution::parallel_execution_tag;
+        using base_type = hpx::execution::detail::parallel_task_policy_shim<
+            hpx::execution::parallel_executor,
+            hpx::traits::executor_parameters_type_t<
+                hpx::execution::parallel_executor>>;
 
-        template <typename Executor_, typename Parameters_>
-        struct rebind
-        {
-            using type = thrust_task_policy_shim<Executor_, Parameters_>;
-        };
+        using base_type::base_type;
+        using base_type::with;
+        constexpr thrust_task_policy() = default;
 
-        constexpr thrust_task_policy() {}
-
-        thrust_task_policy operator()(
-            hpx::execution::experimental::to_task_t) const
-        {
-            return *this;
-        }
-
-        thrust_task_policy_shim<executor_type, executor_parameters_type> on(
-            hpx::cuda::experimental::target const& t) const;
-
-        // HPX execution policy interface
-        executor_type executor() const
-        {
-            return executor_type{};
-        }
-
-        executor_parameters_type& parameters()
-        {
-            return params_;
-        }
-        constexpr executor_parameters_type const& parameters() const
-        {
-            return params_;
-        }
+        // Bind a CUDA target explicitly for async GPU execution
+        thrust_task_policy_shim<hpx::execution::parallel_executor,
+            hpx::traits::executor_parameters_type_t<
+                hpx::execution::parallel_executor>>
+        on(hpx::cuda::experimental::target const& t) const;
 
         // Async helpers with default-target fallback for base policy
         bool has_target() const
@@ -103,33 +84,25 @@ namespace hpx::thrust {
         {
             return target_or_default().get_future_with_event();
         }
-
-    private:
-        executor_parameters_type params_{};
     };
 
     template <typename Executor, typename Parameters>
-    struct thrust_task_policy_shim : thrust_task_policy
+    struct thrust_task_policy_shim
+      : hpx::execution::detail::parallel_task_policy_shim<Executor, Parameters>
     {
-        using executor_type = Executor;
-        using executor_parameters_type = Parameters;
-        using execution_category =
-            typename hpx::traits::executor_execution_category<
-                executor_type>::type;
+        using base_type =
+            hpx::execution::detail::parallel_task_policy_shim<Executor, Parameters>;
+        using base_type::base_type;
+        using base_type::with;
+        constexpr thrust_task_policy_shim() = default;
 
         template <typename Executor_, typename Parameters_>
-        struct rebind
+        constexpr thrust_task_policy_shim(Executor_&& exec, Parameters_&& params)
+          : base_type(HPX_FORWARD(Executor_, exec), HPX_FORWARD(Parameters_, params))
         {
-            using type = thrust_task_policy_shim<Executor_, Parameters_>;
-        };
-
-        thrust_task_policy_shim operator()(
-            hpx::execution::experimental::to_task_t) const
-        {
-            return *this;
         }
 
-        // Bind a CUDA target explicitly for async GPU execution (returns a new shim)
+        // Bind a CUDA target explicitly for async GPU execution
         thrust_task_policy_shim on(
             hpx::cuda::experimental::target const& t) const
         {
@@ -167,42 +140,6 @@ namespace hpx::thrust {
             return target_or_default().get_future_with_event();
         }
 
-        // HPX execution policy interface for shim
-        Executor& executor()
-        {
-            return exec_;
-        }
-        Executor const& executor() const
-        {
-            return exec_;
-        }
-
-        Parameters& parameters()
-        {
-            return params_;
-        }
-        Parameters const& parameters() const
-        {
-            return params_;
-        }
-
-        template <typename Dependent = void,
-            typename Enable = typename std::enable_if<
-                std::is_constructible<Executor>::value &&
-                    std::is_constructible<Parameters>::value,
-                Dependent>::type>
-        constexpr thrust_task_policy_shim()
-        {
-        }
-
-        template <typename Executor_, typename Parameters_>
-        constexpr thrust_task_policy_shim(
-            Executor_&& exec, Parameters_&& params)
-          : exec_(std::forward<Executor_>(exec))
-          , params_(std::forward<Parameters_>(params))
-        {
-        }
-
         // Construct with an already bound CUDA target
         explicit thrust_task_policy_shim(
             std::shared_ptr<hpx::cuda::experimental::target> tgt)
@@ -211,180 +148,57 @@ namespace hpx::thrust {
         }
 
     private:
-        Executor exec_{};
-        Parameters params_{};
         std::shared_ptr<hpx::cuda::experimental::target> bound_target_{};
     };
 
-    inline thrust_task_policy_shim<thrust_task_policy::executor_type,
-        thrust_task_policy::executor_parameters_type>
+    inline thrust_task_policy_shim<hpx::execution::parallel_executor,
+        hpx::traits::executor_parameters_type_t<
+            hpx::execution::parallel_executor>>
     thrust_task_policy::on(hpx::cuda::experimental::target const& t) const
     {
-        using shim_type =
-            thrust_task_policy_shim<executor_type, executor_parameters_type>;
+        using shim_type = thrust_task_policy_shim<
+            hpx::execution::parallel_executor,
+            hpx::traits::executor_parameters_type_t<
+                hpx::execution::parallel_executor>>;
         return shim_type(std::make_shared<hpx::cuda::experimental::target>(t));
     }
 
-    // Base thrust_policy
+    // Base thrust_policy derived from HPX parallel policy shim
     struct thrust_policy
+      : hpx::execution::detail::parallel_policy_shim<
+            hpx::execution::parallel_executor,
+            hpx::traits::executor_parameters_type_t<
+                hpx::execution::parallel_executor>>
     {
-        using executor_type = hpx::execution::parallel_executor;
-        using executor_parameters_type =
-            hpx::execution::experimental::extract_executor_parameters<
-                executor_type>::type;
-        using execution_category = hpx::execution::parallel_execution_tag;
+        using base_type = hpx::execution::detail::parallel_policy_shim<
+            hpx::execution::parallel_executor,
+            hpx::traits::executor_parameters_type_t<
+                hpx::execution::parallel_executor>>;
+        using base_type::base_type;
+        using base_type::on;
+        using base_type::with;
+        constexpr thrust_policy() = default;
 
-        template <typename Executor_, typename Parameters_>
-        struct rebind
+        thrust_task_policy operator()(hpx::execution::experimental::to_task_t) const
         {
-            using type = thrust_policy_shim<Executor_, Parameters_>;
-        };
-
-        constexpr thrust_policy() {}
-
-        thrust_task_policy operator()(
-            hpx::execution::experimental::to_task_t) const
-        {
-            return thrust_task_policy();
+            return thrust_task_policy(
+                this->executor(), this->parameters());
         }
-
-        template <typename Executor_>
-        typename hpx::execution::experimental::rebind_executor<thrust_policy,
-            Executor_, executor_parameters_type>::type
-        on(Executor_&& exec) const
-        {
-            using executor_type = typename std::decay<Executor_>::type;
-            static_assert(hpx::traits::is_executor_any_v<executor_type>,
-                "hpx::traits::is_executor_any_v<Executor>");
-
-            return hpx::execution::experimental::create_rebound_policy(
-                thrust_policy(), HPX_FORWARD(Executor_, exec), parameters());
-        }
-
-        template <typename... Parameters_,
-            typename ParametersType = typename hpx::execution::experimental::
-                executor_parameters_join<Parameters_...>::type>
-        typename hpx::execution::experimental::rebind_executor<thrust_policy,
-            executor_type, ParametersType>::type
-        with(Parameters_&&... params) const
-        {
-            return hpx::execution::experimental::create_rebound_policy(
-                thrust_policy(), executor(),
-                hpx::execution::experimental::join_executor_parameters(
-                    HPX_FORWARD(Parameters_, params)...));
-        }
-
-        executor_type executor() const
-        {
-            return executor_type{};
-        }
-
-        executor_parameters_type& parameters()
-        {
-            return params_;
-        }
-        constexpr executor_parameters_type const& parameters() const
-        {
-            return params_;
-        }
-
-    private:
-        executor_parameters_type params_{};
     };
 
-    template <typename Executor, typename Parameters>
-    struct thrust_policy_shim : thrust_policy
+
+    // Host-specific policy
+    struct thrust_host_policy
+      : hpx::execution::detail::parallel_policy_shim<
+            hpx::execution::parallel_executor,
+            hpx::traits::executor_parameters_type_t<
+                hpx::execution::parallel_executor>>
     {
-        using executor_type = Executor;
-        using executor_parameters_type = Parameters;
-        using execution_category =
-            typename hpx::traits::executor_execution_category<
-                executor_type>::type;
-
-        template <typename Executor_, typename Parameters_>
-        struct rebind
-        {
-            using type = thrust_policy_shim<Executor_, Parameters_>;
-        };
-
-        thrust_task_policy_shim<Executor, Parameters> operator()(
-            hpx::execution::experimental::to_task_t) const
-        {
-            return thrust_task_policy_shim<Executor, Parameters>(
-                exec_, params_);
-        }
-
-        template <typename Executor_>
-        typename hpx::execution::experimental::rebind_executor<
-            thrust_policy_shim, Executor_, executor_parameters_type>::type
-        on(Executor_&& exec) const
-        {
-            using executor_type = typename std::decay<Executor_>::type;
-            static_assert(hpx::traits::is_executor_any_v<executor_type>,
-                "hpx::traits::is_executor_any_v<Executor>");
-
-            return hpx::execution::experimental::create_rebound_policy(
-                thrust_policy_shim(), HPX_FORWARD(Executor_, exec),
-                parameters());
-        }
-
-        template <typename... Parameters_,
-            typename ParametersType = typename hpx::execution::experimental::
-                executor_parameters_join<Parameters_...>::type>
-        typename hpx::execution::experimental::rebind_executor<
-            thrust_policy_shim, executor_type, ParametersType>::type
-        with(Parameters_&&... params) const
-        {
-            return hpx::execution::experimental::create_rebound_policy(
-                thrust_policy_shim(), executor(),
-                hpx::execution::experimental::join_executor_parameters(
-                    HPX_FORWARD(Parameters_, params)...));
-        }
-
-        Executor& executor()
-        {
-            return exec_;
-        }
-
-        Executor const& executor() const
-        {
-            return exec_;
-        }
-
-        Parameters& parameters()
-        {
-            return params_;
-        }
-
-        Parameters const& parameters() const
-        {
-            return params_;
-        }
-
-        template <typename Dependent = void,
-            typename Enable = typename std::enable_if<
-                std::is_constructible<Executor>::value &&
-                    std::is_constructible<Parameters>::value,
-                Dependent>::type>
-        constexpr thrust_policy_shim()
-        {
-        }
-
-        template <typename Executor_, typename Parameters_>
-        constexpr thrust_policy_shim(Executor_&& exec, Parameters_&& params)
-          : exec_(std::forward<Executor_>(exec))
-          , params_(std::forward<Parameters_>(params))
-        {
-        }
-
-    private:
-        Executor exec_;
-        Parameters params_;
-    };
-
-    // Host-specific policy that inherits from thrust_policy
-    struct thrust_host_policy : thrust_policy
-    {
+        using base_type = hpx::execution::detail::parallel_policy_shim<
+            hpx::execution::parallel_executor,
+            hpx::traits::executor_parameters_type_t<
+                hpx::execution::parallel_executor>>;
+        using base_type::base_type;
         constexpr thrust_host_policy() = default;
 
         // Return thrust::host execution policy
@@ -394,9 +208,18 @@ namespace hpx::thrust {
         }
     };
 
-    // Device-specific policy that inherits from thrust_policy
-    struct thrust_device_policy : thrust_policy
+    // Device-specific policy
+    struct thrust_device_policy
+      : hpx::execution::detail::parallel_policy_shim<
+            hpx::execution::parallel_executor,
+            hpx::traits::executor_parameters_type_t<
+                hpx::execution::parallel_executor>>
     {
+        using base_type = hpx::execution::detail::parallel_policy_shim<
+            hpx::execution::parallel_executor,
+            hpx::traits::executor_parameters_type_t<
+                hpx::execution::parallel_executor>>;
+        using base_type::base_type;
         constexpr thrust_device_policy() = default;
 
         // Return thrust::device execution policy
@@ -410,7 +233,6 @@ namespace hpx::thrust {
     inline constexpr thrust_host_policy thrust_host{};
     inline constexpr thrust_device_policy thrust_device{};
 
-    // Legacy support - default thrust policy (keep for backward compatibility)
     static constexpr thrust_policy thrust;
 
     template <typename ExecutionPolicy>
@@ -424,11 +246,6 @@ namespace hpx::thrust {
     {
     };
 
-    template <typename Executor, typename Parameters>
-    struct is_thrust_execution_policy<
-        hpx::thrust::thrust_policy_shim<Executor, Parameters>> : std::true_type
-    {
-    };
 
     template <>
     struct is_thrust_execution_policy<hpx::thrust::thrust_host_policy>
@@ -503,11 +320,6 @@ namespace hpx::thrust {
 }    // namespace hpx::thrust
 
 namespace hpx::detail {
-    template <typename Executor, typename Parameters>
-    struct is_rebound_execution_policy<
-        hpx::thrust::thrust_policy_shim<Executor, Parameters>> : std::true_type
-    {
-    };
 
     template <typename Executor, typename Parameters>
     struct is_rebound_execution_policy<
@@ -521,11 +333,6 @@ namespace hpx::detail {
     {
     };
 
-    template <typename Executor, typename Parameters>
-    struct is_execution_policy<
-        hpx::thrust::thrust_policy_shim<Executor, Parameters>> : std::true_type
-    {
-    };
 
     template <>
     struct is_execution_policy<hpx::thrust::thrust_host_policy> : std::true_type
